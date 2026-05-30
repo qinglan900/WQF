@@ -2,8 +2,8 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>云闪付交易详情原型</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=yes">
+    <title>云闪付·地铁乘车记录</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
     <script>
@@ -18,155 +18,56 @@
                         'divider': '#EEEEEE',
                     },
                     fontFamily: {
-                        sans: ['PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'sans-serif'],
+                        sans: ['PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Roboto', 'sans-serif'],
                     },
                 }
             }
         }
-
-        const routeOptions = [
-            { entry: '南沙河', exit: '青龙岗', amount: '8.00' },
-            { entry: '南沙河', exit: '科大先研院', amount: '7.00' },
-            { entry: '四牌楼', exit: '天鹅湖', amount: '3.00' }
-        ];
-
-        let currentRoute = routeOptions[0];
-        let baseTime = null;
-
-        function formatDateTime(date) {
-            const year = date.getFullYear();
-            const month = date.getMonth() + 1;
-            const day = date.getDate();
-            const hours = String(date.getHours()).padStart(2, '0');
-            const minutes = String(date.getMinutes()).padStart(2, '0');
-            const seconds = String(date.getSeconds()).padStart(2, '0');
-            return { dateStr: `${year}年${month}月${day}日`, timeStr: `${hours}:${minutes}:${seconds}`, hmStr: `${hours}:${minutes}` };
-        }
-
-        function updateTimes() {
-            const now = baseTime || new Date();
-            if (!baseTime) baseTime = now;
-
-            const { hmStr } = formatDateTime(now);
-            document.getElementById('status-bar-time').textContent = hmStr;
-
-            const entryTime = new Date(now.getTime() - 78 * 60 * 1000 - 13 * 1000);
-            const exitTime = new Date(now.getTime() - 24 * 1000);
-            const deductTime = new Date(now.getTime() - 5 * 1000);
-
-            const entryFormatted = formatDateTime(entryTime);
-            const exitFormatted = formatDateTime(exitTime);
-            const deductFormatted = formatDateTime(deductTime);
-
-            document.getElementById('deduct-time').textContent = `延迟扣费|${deductFormatted.dateStr} ${deductFormatted.timeStr}`;
-            document.getElementById('ride-info').innerHTML =
-                `${currentRoute.entry} ${entryFormatted.dateStr} ${entryFormatted.timeStr}<br>` +
-                `${currentRoute.exit} ${exitFormatted.dateStr} ${exitFormatted.timeStr}`;
-        }
-
-        function updateAmount() {
-            document.getElementById('amount-display').textContent = `-${currentRoute.amount}`;
-            document.getElementById('order-amount').textContent = `¥${currentRoute.amount}`;
-        }
-
-        function showRouteSelector() {
-            const overlay = document.getElementById('route-overlay');
-            overlay.classList.remove('hidden');
-        }
-
-        function hideRouteSelector() {
-            const overlay = document.getElementById('route-overlay');
-            overlay.classList.add('hidden');
-        }
-
-        function selectRoute(index) {
-            currentRoute = routeOptions[index];
-            updateTimes();
-            updateAmount();
-            hideRouteSelector();
-        }
-
-        function renderRouteOptions() {
-            const list = document.getElementById('route-list');
-            list.innerHTML = routeOptions.map((route, index) => `
-                <div class="p-4 border-b border-gray-100 cursor-pointer hover:bg-gray-50 active:bg-gray-100" onclick="selectRoute(${index})">
-                    <div class="flex justify-between items-center">
-                        <span class="text-[16px] text-text-primary">${route.entry} → ${route.exit}</span>
-                        <span class="text-[16px] font-bold text-text-primary">¥${route.amount}</span>
-                    </div>
-                </div>
-            `).join('');
-        }
-
-        function addCustomRoute() {
-            const entry = document.getElementById('custom-entry').value.trim();
-            const exit = document.getElementById('custom-exit').value.trim();
-            const amount = document.getElementById('custom-amount').value.trim();
-
-            if (!entry || !exit || !amount) {
-                alert('请填写完整的站点和金额信息');
-                return;
-            }
-
-            const newRoute = { entry, exit, amount };
-            routeOptions.push(newRoute);
-            renderRouteOptions();
-
-            document.getElementById('custom-entry').value = '';
-            document.getElementById('custom-exit').value = '';
-            document.getElementById('custom-amount').value = '';
-
-            selectRoute(routeOptions.length - 1);
-        }
-
-        document.addEventListener('DOMContentLoaded', function() {
-            updateTimes();
-            updateAmount();
-            renderRouteOptions();
-
-            document.getElementById('headphones-btn').addEventListener('click', showRouteSelector);
-            document.getElementById('route-overlay').addEventListener('click', function(e) {
-                if (e.target === this) hideRouteSelector();
-            });
-        });
     </script>
-    <style type="text/tailwindcss">
-        @layer utilities {
-            .card-shadow {
-                box-shadow: 0 1px 6px rgba(0, 0, 0, 0.04);
-            }
-            .top-gradient {
-                background: linear-gradient(to bottom, #f5f9ff, #ffffff);
-            }
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            background: #f3f4f6;
+            height: 100%;
+        }
+        /* 自定义滚动条 */
+        .custom-scroll::-webkit-scrollbar {
+            width: 4px;
+        }
+        .custom-scroll::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+        .custom-scroll::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 4px;
+        }
+        .tap-highlight {
+            -webkit-tap-highlight-color: rgba(0,0,0,0.05);
+        }
+        /* 保证卡片阴影 */
+        .card-shadow {
+            box-shadow: 0 1px 6px rgba(0, 0, 0, 0.04);
+        }
+        .top-gradient {
+            background: linear-gradient(to bottom, #f5f9ff, #ffffff);
         }
     </style>
 </head>
-<body class="bg-gray-100 font-sans">
-    <!-- 手机容器 - 一屏显示，无滚动 -->
-    <div class="w-[390px] h-[844px] mx-auto bg-white overflow-hidden shadow-2xl flex flex-col">
-        <!-- 顶部状态栏 -->
-        <div class="top-gradient px-6 py-3 flex justify-between items-center text-text-primary text-[13px]">
-            <span id="status-bar-time" class="font-medium">17:06</span>
-            <div class="flex items-center gap-1.5">
-                <span class="text-[10px]">1.50 KB/s</span>
-                <i class="fa fa-bell-slash-o text-[12px]"></i>
-                <span class="text-[12px]">5G</span>
-                <i class="fa fa-signal text-[12px]"></i>
-                <i class="fa fa-battery-full text-[12px]"></i>
-                <span class="text-[12px]">100</span>
-            </div>
-        </div>
-
-        <!-- 标题栏 -->
-        <div class="top-gradient px-4 py-3 flex justify-between items-center">
-            <i class="fa fa-angle-left text-[20px] text-text-primary"></i>
+<body class="font-sans flex items-center justify-center bg-gray-100" style="min-height: 100vh;">
+    <!-- 手机容器：宽度自适应，最大390px，不缩放 -->
+    <div class="w-full max-w-[390px] bg-white shadow-2xl flex flex-col relative" style="min-height: 100vh; height: auto;">
+        <!-- 标题栏（保留耳机切换按钮） -->
+        <div class="top-gradient px-4 py-3 flex justify-between items-center shrink-0 border-b border-gray-100">
+            <i class="fa fa-angle-left text-[24px] text-text-primary opacity-70" style="padding: 6px;"></i>
             <h1 class="text-[18px] font-bold text-text-primary">云闪付交易详情</h1>
-            <i id="headphones-btn" class="fa fa-headphones text-[20px] text-text-primary cursor-pointer"></i>
+            <i id="headphones-btn" class="fa fa-headphones text-[22px] text-text-primary cursor-pointer" style="padding: 6px;"></i>
         </div>
 
-        <!-- 主内容区域 - 一屏显示，无滚动 -->
-        <div class="flex-1 px-4 pt-3">
-            <!-- 主交易信息卡片 - 大幅减少内边距和间距 -->
+        <!-- 主内容区域：可滚动，充满剩余空间 -->
+        <div class="flex-1 px-4 pt-3 pb-6 overflow-y-auto custom-scroll">
+            <!-- 主交易信息卡片 -->
             <div class="bg-white rounded-2xl card-shadow p-5">
                 <!-- 商户图标与名称 -->
                 <div class="text-center mb-4">
@@ -184,13 +85,12 @@
                         </svg>
                     </div>
                     <p class="text-[17px] text-text-primary mb-3">合肥市轨道交通集团有限公司运营分公司</p>
-                    <p id="amount-display" class="text-[38px] font-bold text-text-primary leading-tight">-10.00</p>
+                    <p id="amount-display" class="text-[38px] font-bold text-text-primary leading-tight">-7.00</p>
                 </div>
 
-                <!-- 分割线 -->
                 <div class="border-t border-divider my-4"></div>
 
-                <!-- 交易详情列表 - 缩小字体，确保所有文字不换行 -->
+                <!-- 交易详情列表 -->
                 <div class="space-y-[14px]">
                     <div class="flex">
                         <span class="w-24 shrink-0 text-text-muted text-[15px]">当前状态</span>
@@ -198,7 +98,7 @@
                     </div>
                     <div class="flex">
                         <span class="w-24 shrink-0 text-text-muted text-[15px]">订单金额</span>
-                        <span id="order-amount" class="text-text-primary text-[15px]">¥10.00</span>
+                        <span id="order-amount" class="text-text-primary text-[15px]">¥7.00</span>
                     </div>
                     <div class="flex">
                         <span class="w-24 shrink-0 text-text-muted text-[15px]">付款方式</span>
@@ -206,29 +106,29 @@
                     </div>
                     <div class="flex">
                         <span class="w-24 shrink-0 text-text-muted text-[15px]">扣款时间</span>
-                        <span id="deduct-time" class="text-text-primary text-[15px]">延迟扣费|2026年3月18日 18:41:52</span>
+                        <span id="deduct-time" class="text-text-primary text-[15px]">延迟扣费|--</span>
                     </div>
                     <div class="flex">
                         <span class="w-24 shrink-0 text-text-muted text-[15px]">乘车信息</span>
-                        <div id="ride-info" class="text-text-primary text-[15px] leading-snug">
-                            合肥南站 2026年3月18日 17:57:03<br>
-                            青龙岗 2026年3月18日 18:41:46
+                        <div id="ride-info" class="text-text-primary text-[15px] leading-snug flex-1">
+                            南沙河 2026年5月30日 15:30:00<br>
+                            青龙岗 2026年5月30日 16:48:00
                         </div>
                     </div>
                     <div class="flex">
                         <span class="w-24 shrink-0 text-text-muted text-[15px]">交易流水号</span>
-                        <span class="text-text-primary text-[15px]">520870120781626722176</span>
+                        <span class="text-text-primary text-[15px] break-all">520870120781626722176</span>
                     </div>
                     <div class="flex">
                         <span class="w-24 shrink-0 text-text-muted text-[15px]">商户订单号</span>
-                        <span class="text-text-primary text-[15px]">1351626680102305792</span>
+                        <span class="text-text-primary text-[15px] break-all">1351626680102305792</span>
                     </div>
                 </div>
             </div>
 
             <!-- 次级按钮 -->
             <div class="mt-4">
-                <div class="bg-white rounded-2xl card-shadow p-4 flex justify-between items-center">
+                <div class="bg-white rounded-2xl card-shadow p-4 flex justify-between items-center active:bg-gray-50 tap-highlight">
                     <div class="flex items-center gap-3">
                         <i class="fa fa-rmb text-[15px] text-text-primary"></i>
                         <span class="text-text-primary text-[15px]">在此商户的交易</span>
@@ -237,39 +137,255 @@
                 </div>
             </div>
         </div>
-
-        <!-- 底部系统导航栏 - 增加上方空隙，与原图一致 -->
-        <div class="mt-auto bg-white py-4 flex justify-around items-center border-t border-gray-100">
-            <i class="fa fa-angle-left text-[22px] text-text-primary"></i>
-            <i class="fa fa-square-o text-[22px] text-text-primary"></i>
-            <i class="fa fa-bars text-[22px] text-text-primary"></i>
-        </div>
     </div>
 
-    <!-- 路线选择弹窗 -->
-    <div id="route-overlay" class="hidden fixed inset-0 bg-black/50 flex items-end justify-center z-50">
-        <div class="bg-white w-full max-w-[390px] rounded-t-2xl overflow-hidden">
-            <div class="flex justify-between items-center p-4 border-b border-gray-100">
+    <!-- 路线选择弹窗（无状态栏/底部栏干扰，覆盖全屏） -->
+    <div id="route-overlay" class="hidden fixed inset-0 bg-black/50 flex items-end justify-center z-50" style="backdrop-filter: blur(2px);">
+        <div class="bg-white w-full max-w-[390px] rounded-t-2xl overflow-hidden flex flex-col max-h-[85vh]">
+            <div class="flex justify-between items-center p-4 border-b border-gray-100 shrink-0">
                 <span class="text-[17px] font-bold text-text-primary">选择路线</span>
-                <span class="text-[14px] text-text-muted cursor-pointer" onclick="hideRouteSelector()">取消</span>
+                <span class="text-[14px] text-text-muted cursor-pointer px-3 py-1 active:opacity-60" onclick="hideRouteSelector()">取消</span>
             </div>
-            <div id="route-list">
-                <!-- 路线选项将通过JS动态生成 -->
+            <div id="route-list" class="overflow-y-auto custom-scroll flex-1">
+                <!-- 动态渲染路线列表 -->
             </div>
-            <!-- 自定义输入区域 -->
-            <div class="p-4 border-t border-gray-100 bg-gray-50">
-                <p class="text-[14px] text-text-muted mb-3">自定义路线</p>
-                <div class="flex gap-2 mb-3">
-                    <input type="text" id="custom-entry" placeholder="进站站点" class="flex-1 px-3 py-2 text-[14px] border border-gray-200 rounded-lg focus:outline-none focus:border-unionpay-icon-green">
+            <!-- 自定义添加区域 -->
+            <div class="p-4 border-t border-gray-100 bg-gray-50 shrink-0">
+                <p class="text-[14px] text-text-muted mb-2">➕ 自定义路线 (金额决定乘车时长)</p>
+                <div class="flex gap-2 mb-2">
+                    <input type="text" id="custom-entry" placeholder="进站站点" class="flex-1 px-3 py-2 text-[14px] border border-gray-200 rounded-lg focus:outline-none focus:border-unionpay-icon-green bg-white">
                     <span class="text-text-muted self-center">→</span>
-                    <input type="text" id="custom-exit" placeholder="出站站点" class="flex-1 px-3 py-2 text-[14px] border border-gray-200 rounded-lg focus:outline-none focus:border-unionpay-icon-green">
+                    <input type="text" id="custom-exit" placeholder="出站站点" class="flex-1 px-3 py-2 text-[14px] border border-gray-200 rounded-lg focus:outline-none focus:border-unionpay-icon-green bg-white">
                 </div>
                 <div class="flex gap-2">
-                    <input type="text" id="custom-amount" placeholder="金额" class="w-24 px-3 py-2 text-[14px] border border-gray-200 rounded-lg focus:outline-none focus:border-unionpay-icon-green">
-                    <button onclick="addCustomRoute()" class="flex-1 bg-unionpay-icon-green text-white text-[14px] font-medium py-2 rounded-lg active:opacity-80">添加并选择</button>
+                    <input type="number" id="custom-amount" placeholder="金额 (元)" step="0.01" inputmode="decimal" class="w-28 px-3 py-2 text-[14px] border border-gray-200 rounded-lg focus:outline-none focus:border-unionpay-icon-green bg-white">
+                    <button id="addCustomBtn" class="flex-1 bg-unionpay-icon-green text-white text-[14px] font-medium py-2 rounded-lg active:opacity-80 transition">添加并选择</button>
                 </div>
+                <p class="text-[11px] text-text-muted mt-2">💡 提示：金额越高，预估乘车时间越长（约1元/12分钟）</p>
             </div>
         </div>
     </div>
+
+    <script>
+        // ---------- 路线数据 ----------
+        const routeOptions = [
+            { entry: '南沙河', exit: '青龙岗', amount: '7.00', travelMinutes: 78 },
+            { entry: '南沙河', exit: '科大先研院', amount: '7.00', travelMinutes: 70 },
+            { entry: '四牌楼', exit: '天鹅湖', amount: '3.00', travelMinutes: 22 }
+        ];
+
+        let currentRoute = routeOptions[0];
+
+        // 辅助函数：格式化日期时间
+        function formatDateTime(date) {
+            const year = date.getFullYear();
+            const month = date.getMonth() + 1;
+            const day = date.getDate();
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            const seconds = String(date.getSeconds()).padStart(2, '0');
+            return { 
+                dateStr: `${year}年${month}月${day}日`, 
+                timeStr: `${hours}:${minutes}:${seconds}`,
+                hmStr: `${hours}:${minutes}`
+            };
+        }
+
+        // 根据当前路线和真实时间更新乘车信息、扣款时间（没有状态栏，只更新卡片内时间）
+        function updateTimes() {
+            const now = new Date();      // 始终使用当前真实时间，避免冻结
+            const travelMins = currentRoute.travelMinutes || 15;
+            
+            // 进站时间 = 当前时间 - 乘车时长 - 13秒刷卡缓冲
+            // 出站时间 = 当前时间 - 24秒
+            // 扣款时间 = 当前时间 - 5秒
+            const entryTime = new Date(now.getTime() - (travelMins * 60 * 1000) - 13 * 1000);
+            const exitTime = new Date(now.getTime() - 24 * 1000);
+            const deductTime = new Date(now.getTime() - 5 * 1000);
+            
+            const entryFormatted = formatDateTime(entryTime);
+            const exitFormatted = formatDateTime(exitTime);
+            const deductFormatted = formatDateTime(deductTime);
+            
+            document.getElementById('deduct-time').textContent = `延迟扣费|${deductFormatted.dateStr} ${deductFormatted.timeStr}`;
+            document.getElementById('ride-info').innerHTML = `${currentRoute.entry} ${entryFormatted.dateStr} ${entryFormatted.timeStr}<br>${currentRoute.exit} ${exitFormatted.dateStr} ${exitFormatted.timeStr}`;
+        }
+        
+        function updateAmount() {
+            document.getElementById('amount-display').textContent = `-${currentRoute.amount}`;
+            document.getElementById('order-amount').textContent = `¥${currentRoute.amount}`;
+        }
+        
+        function refreshUI() {
+            updateTimes();
+            updateAmount();
+        }
+        
+        // 弹窗控制
+        function showRouteSelector() {
+            const overlay = document.getElementById('route-overlay');
+            overlay.classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+        }
+        
+        function hideRouteSelector() {
+            const overlay = document.getElementById('route-overlay');
+            overlay.classList.add('hidden');
+            document.body.style.overflow = '';
+        }
+        
+        function selectRoute(index) {
+            if (index >= 0 && index < routeOptions.length) {
+                currentRoute = routeOptions[index];
+                refreshUI();
+                hideRouteSelector();
+            }
+        }
+        
+        // 渲染路线列表（支持自定义删除）
+        function renderRouteOptions() {
+            const list = document.getElementById('route-list');
+            if (!list) return;
+            list.innerHTML = '';
+            routeOptions.forEach((route, idx) => {
+                const isCustomRoute = idx >= 3;
+                const routeDiv = document.createElement('div');
+                routeDiv.className = 'p-4 border-b border-gray-100 flex justify-between items-center hover:bg-gray-50 active:bg-gray-100 cursor-pointer tap-highlight';
+                
+                const leftDiv = document.createElement('div');
+                leftDiv.className = 'flex-1';
+                leftDiv.innerHTML = `<span class="text-[16px] text-text-primary">${route.entry} → ${route.exit}</span>
+                                     <span class="text-[12px] text-text-muted ml-2">约${route.travelMinutes}分钟</span>`;
+                
+                const rightWrapper = document.createElement('div');
+                rightWrapper.className = 'flex items-center gap-3';
+                const priceSpan = document.createElement('span');
+                priceSpan.className = 'text-[16px] font-bold text-text-primary';
+                priceSpan.textContent = `¥${route.amount}`;
+                rightWrapper.appendChild(priceSpan);
+                
+                if (isCustomRoute) {
+                    const delBtn = document.createElement('i');
+                    delBtn.className = 'fa fa-trash-o text-[18px] text-red-400 active:text-red-600';
+                    delBtn.style.padding = '6px';
+                    delBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        if (confirm(`删除路线 "${route.entry} → ${route.exit}" 吗？`)) {
+                            routeOptions.splice(idx, 1);
+                            renderRouteOptions();
+                            if (currentRoute === route) {
+                                currentRoute = routeOptions[0];
+                                refreshUI();
+                            }
+                        }
+                    });
+                    rightWrapper.appendChild(delBtn);
+                }
+                
+                routeDiv.appendChild(leftDiv);
+                routeDiv.appendChild(rightWrapper);
+                routeDiv.addEventListener('click', () => selectRoute(idx));
+                list.appendChild(routeDiv);
+            });
+            
+            if (routeOptions.length === 0) {
+                routeOptions.push({ entry: '合肥南站', exit: '合肥火车站', amount: '5.00', travelMinutes: 45 });
+                renderRouteOptions();
+                currentRoute = routeOptions[0];
+                refreshUI();
+            }
+        }
+        
+        // 根据金额估算乘车时长 (1元 ≈ 12分钟)
+        function estimateTravelMinutesByAmount(amount) {
+            const num = parseFloat(amount);
+            if (isNaN(num)) return 15;
+            let mins = Math.round(num * 12);
+            mins = Math.min(150, Math.max(5, mins));
+            return mins;
+        }
+        
+        function addCustomRoute() {
+            const entry = document.getElementById('custom-entry').value.trim();
+            const exit = document.getElementById('custom-exit').value.trim();
+            let amountRaw = document.getElementById('custom-amount').value.trim();
+            if (!entry || !exit || !amountRaw) {
+                alert('请完整填写进站、出站站点和金额');
+                return;
+            }
+            const amountNum = parseFloat(amountRaw);
+            if (isNaN(amountNum) || amountNum <= 0) {
+                alert('请输入有效的金额（大于0的数字）');
+                return;
+            }
+            const formattedAmount = amountNum.toFixed(2);
+            const travelMins = estimateTravelMinutesByAmount(formattedAmount);
+            const newRoute = {
+                entry: entry,
+                exit: exit,
+                amount: formattedAmount,
+                travelMinutes: travelMins
+            };
+            routeOptions.push(newRoute);
+            renderRouteOptions();
+            // 清空输入框
+            document.getElementById('custom-entry').value = '';
+            document.getElementById('custom-exit').value = '';
+            document.getElementById('custom-amount').value = '';
+            // 自动选中新路线
+            currentRoute = newRoute;
+            refreshUI();
+            hideRouteSelector();
+            // 轻提示
+            const toast = document.createElement('div');
+            toast.innerText = '已添加并切换路线';
+            toast.className = 'fixed bottom-8 left-1/2 transform -translate-x-1/2 bg-black/70 text-white px-4 py-2 rounded-full text-[13px] z-50';
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 1500);
+        }
+        
+        // 修复安卓键盘遮挡：弹窗内聚焦时滚动到可视区
+        function initKeyboardFix() {
+            const overlay = document.getElementById('route-overlay');
+            const inputs = ['#custom-entry', '#custom-exit', '#custom-amount'].map(s => document.querySelector(s));
+            inputs.forEach(input => {
+                if (input) {
+                    input.addEventListener('focus', () => {
+                        setTimeout(() => {
+                            if (overlay && !overlay.classList.contains('hidden')) {
+                                input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            }
+                        }, 150);
+                    });
+                }
+            });
+        }
+        
+        // 由于移除了状态栏，不需要时钟刷新，但为了保证页面打开时立即更新即可。
+        document.addEventListener('DOMContentLoaded', function() {
+            renderRouteOptions();
+            refreshUI();
+            // 绑定事件
+            const headphone = document.getElementById('headphones-btn');
+            if (headphone) headphone.addEventListener('click', showRouteSelector);
+            const addBtn = document.getElementById('addCustomBtn');
+            if (addBtn) addBtn.addEventListener('click', addCustomRoute);
+            const overlay = document.getElementById('route-overlay');
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) hideRouteSelector();
+            });
+            initKeyboardFix();
+            // 防止弹窗内滑动穿透
+            const routeListDiv = document.getElementById('route-list');
+            if (routeListDiv) {
+                routeListDiv.addEventListener('touchmove', (e) => e.stopPropagation());
+            }
+        });
+        
+        // 可选：页面可见性变化时刷新时间（让乘车时间更实时）
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden) refreshUI();
+        });
+    </script>
 </body>
 </html>
