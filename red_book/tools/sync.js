@@ -104,7 +104,7 @@ function main() {
 
   // 3. 提交并推送
   try {
-    git(['add', 'data', 'excel', 'index.html', 'sync.bat', 'README.md', '.gitignore', 'tools/sync.js', 'tools/package.json', 'tools/package-lock.json']);
+    git(['add', 'data', 'excel', 'index.html', 'sync.bat', 'export.bat', 'README.md', '.gitignore', 'tools/sync.js', 'tools/export.js', 'tools/package.json', 'tools/package-lock.json']);
     const status = git(['status', '--porcelain']).trim();
     if (!status) {
       console.log('没有新变化，无需提交。');
