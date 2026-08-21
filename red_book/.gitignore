@@ -1,0 +1,5 @@
+node_modules/
+~$*
+*.log
+tools/ms-playwright/
+tools/.profile/

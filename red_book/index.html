@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>笔记数据趋势分析</title>
+<!-- 解析 Excel -->
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<!-- 画图 -->
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+<!-- 拖拽排序 -->
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<style>
+  :root {
+    --primary: #4f6ef7;
+    --primary-light: #eef1fe;
+    --text: #1f2430;
+    --muted: #7a8194;
+    --border: #e6e8f0;
+    --card-bg: #ffffff;
+    --bg: #f5f7fb;
+    --danger: #e5534b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  .container { max-width: 1280px; margin: 0 auto; padding: 24px 20px 48px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .subtitle { color: var(--muted); margin: 0 0 20px; font-size: 13px; }
+
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 20px;
+    margin-bottom: 18px;
+  }
+  .card h2 { font-size: 15px; margin: 0 0 12px; }
+
+  /* 导入区 */
+  .import-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .btn {
+    border: 1px solid var(--primary);
+    background: var(--primary);
+    color: #fff;
+    padding: 8px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background .15s;
+  }
+  .btn:hover { background: #3d5ce0; }
+  .btn.ghost { background: #fff; color: var(--primary); }
+  .btn.ghost:hover { background: var(--primary-light); }
+  .file-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--primary-light);
+    color: var(--primary);
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+  .file-tag .date { color: var(--text); font-weight: 600; }
+  .file-tag .del {
+    cursor: pointer;
+    color: var(--muted);
+    font-weight: 700;
+    padding: 0 2px;
+  }
+  .file-tag .del:hover { color: var(--danger); }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 10px; }
+
+  /* 主体两栏 */
+  .main { display: grid; grid-template-columns: 300px 1fr; gap: 18px; align-items: start; }
+  @media (max-width: 860px) { .main { grid-template-columns: 1fr; } }
+
+  .search {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 14px;
+    margin-bottom: 10px;
+    outline: none;
+  }
+  .search:focus { border-color: var(--primary); }
+  .note-list { max-height: 480px; overflow-y: auto; }
+  .note-item {
+    display: flex;
+    align-items: center;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all .12s;
+  }
+  .note-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    margin-left: 6px;
+  }
+  .drag-handle {
+    cursor: grab;
+    color: var(--muted);
+    padding: 2px 6px;
+    user-select: none;
+    font-size: 15px;
+    letter-spacing: 1px;
+    flex-shrink: 0;
+  }
+  .drag-handle:active { cursor: grabbing; }
+  .note-content { flex: 1; min-width: 0; }
+  .note-item:hover { border-color: var(--primary); }
+  .note-item.active { border-color: var(--primary); background: var(--primary-light); }
+  .hidden-section { margin-top: 8px; }
+  .hidden-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 13px;
+    user-select: none;
+  }
+  .hidden-header:hover { background: var(--primary-light); color: var(--primary); }
+  .hidden-section .note-item { margin-top: 8px; }
+  .note-item .title {
+    font-weight: 600;
+    margin-bottom: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .note-item .meta { color: var(--muted); font-size: 12px; }
+  .note-item .genre {
+    float: right;
+    font-size: 12px;
+    color: var(--primary);
+    background: #fff;
+    border: 1px solid var(--primary);
+    border-radius: 4px;
+    padding: 0 6px;
+    margin-left: 6px;
+  }
+  .note-item.hidden { opacity: 0.45; }
+  .hide-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    margin-left: 0;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    border-radius: 6px;
+    flex-shrink: 0;
+  }
+  .hide-btn:hover { background: var(--primary-light); color: var(--primary); }
+  .btn.ghost.on { background: var(--primary); color: #fff; border-color: var(--primary); }
+  .btn.sm { padding: 6px 10px; font-size: 13px; }
+  .sort-select {
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 13px;
+    color: var(--text);
+    background: #fff;
+    cursor: pointer;
+    outline: none;
+  }
+  .sort-select:focus { border-color: var(--primary); }
+
+  .metric-bar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+  .metric-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 5px 12px;
+    cursor: pointer;
+    user-select: none;
+    font-size: 13px;
+    transition: all .12s;
+  }
+  .metric-chip:hover { border-color: var(--primary); }
+  .metric-chip.on { background: var(--primary); color: #fff; border-color: var(--primary); }
+  .chart-note { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+  #chart { width: 100%; height: 460px; }
+  .empty { color: var(--muted); text-align: center; padding: 60px 20px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>笔记数据趋势分析</h1>
+  <p class="subtitle">导入多个日期的「笔记列表明细表」，按首次发布时间匹配同一笔记，自动计算每日新增并绘制趋势图。</p>
+
+  <div class="card">
+    <h2>1. 导入 Excel 文件（可多选）</h2>
+    <div class="import-row">
+      <input type="file" id="fileInput" multiple accept=".xlsx,.xls" style="display:none">
+      <button class="btn" id="btnImport">选择文件</button>
+      <button class="btn ghost" id="btnClear">清空数据</button>
+      <div id="fileList" style="display:flex; flex-wrap:wrap; gap:8px;"></div>
+    </div>
+    <p class="hint">日期从文件名自动识别（如「笔记列表明细表-20260815.xlsx」→ 2026-08-15）。文件名里必须包含 8 位日期数字。已导入的数据会自动保存在浏览器本地，下次打开无需重新上传。</p>
+  </div>
+
+  <div class="main">
+    <div class="card">
+      <h2>2. 选择笔记（拖动右侧手柄排序）</h2>
+      <div style="display:flex; gap:8px; margin-bottom:10px;">
+        <input type="text" class="search" id="search" placeholder="搜索标题 / 发布时间" style="margin-bottom:0; flex:1;">
+        <select class="sort-select" id="sortSelect" title="排序方式">
+          <option value="publishAsc">发布时间正序</option>
+          <option value="publishDesc">发布时间倒序</option>
+          <option value="views">观看量</option>
+          <option value="yesterdayViews">昨日观看量</option>
+          <option value="exposure">曝光量</option>
+          <option value="custom">自定义</option>
+        </select>
+      </div>
+      <div class="note-list" id="noteList"><div class="empty">导入文件后显示笔记列表</div></div>
+    </div>
+
+    <div class="card">
+      <h2>3. 选择指标 &amp; 查看趋势</h2>
+      <div class="metric-bar" id="metricBar"></div>
+      <p class="chart-note">按量级分组展示累计总量，各子图独立坐标；鼠标悬停可查看「区间新增」与「总量」。人均观看时长仅展示当天值，封面点击率的区间值 = 区间观看量 ÷ 区间曝光量。</p>
+      <div id="chart"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  // 10 个数值指标（按表头名匹配）
+  const METRICS = ['曝光', '观看量', '封面点击率', '点赞', '评论', '收藏', '涨粉', '分享', '人均观看时长', '弹幕'];
+  // 比例 / 时长类指标放到右轴，避免和次数类量纲冲突
+  const RIGHT_AXIS = new Set(['封面点击率', '人均观看时长']);
+  // 默认勾选的指标
+  const DEFAULT_ON = new Set(['曝光', '观看量', '点赞', '评论', '收藏']);
+
+  const STORAGE_KEY = 'noteTrendFiles_v1';
+
+  // 全局状态
+  let fileList = [];   // { name, date:'YYYYMMDD', rows: Map<key, row> }
+  let notes = [];      // 构建后的笔记序列
+  let selectedKey = null;
+  let chart = null;
+  let noteOrder = [];  // 自定义排序：key 数组
+  let sortMode = 'publishDesc'; // 排序方式：publishAsc/publishDesc/views/exposure/custom
+  let sortable = null; // 拖拽排序实例
+  let hiddenKeys = new Set(); // 隐藏的笔记 key
+  let hiddenCollapsed = true; // 已隐藏区是否收起
+
+  const $ = (id) => document.getElementById(id);
+  const fileInput = $('fileInput');
+  const btnImport = $('btnImport');
+
+  // ---------- 工具函数 ----------
+  function normKey(s) { return String(s).replace(/\s+/g, ''); }
+  function parseDate8(s) { // 'YYYYMMDD' -> Date
+    return new Date(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8));
+  }
+  function fmtDate8(s) { return s.slice(0, 4) + '-' + s.slice(4, 6) + '-' + s.slice(6, 8); }
+  function fmtShort(s) { return s.slice(4, 6) + '-' + s.slice(6, 8); }
+  function fmtMD(ts) { const d = new Date(ts); return String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+  function diffDays(a, b) { return Math.round((parseDate8(b) - parseDate8(a)) / 86400000); }
+  function round(v, p) { const n = Number(v); return Number.isFinite(n) ? +n.toFixed(p) : n; }
+  function formatVal(metric, v) {
+    if (v === null || v === undefined || Number.isNaN(v)) return '-';
+    if (metric === '封面点击率') return String(round(v, 4));
+    if (metric === '人均观看时长') return String(round(v, 1));
+    return String(round(v, 0));
+  }
+
+  // ---------- 本地持久化 ----------
+  function save() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        files: fileList.map(f => ({ name: f.name, date: f.date, rows: Array.from(f.rows.values()) })),
+        order: noteOrder,
+        hidden: Array.from(hiddenKeys),
+        sortMode: sortMode
+      }));
+    } catch (e) { console.warn('保存失败', e); }
+  }
+  function load() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      fileList = (data.files || []).map(f => {
+        const rows = new Map();
+        (f.rows || []).forEach(r => rows.set(r.key, r));
+        return { name: f.name, date: f.date, rows };
+      });
+      noteOrder = Array.isArray(data.order) ? data.order : [];
+      hiddenKeys = new Set(Array.isArray(data.hidden) ? data.hidden : []);
+      sortMode = data.sortMode || 'publishDesc';
+    } catch (e) {
+      console.warn('读取失败', e);
+      fileList = [];
+      noteOrder = [];
+      hiddenKeys = new Set();
+      sortMode = 'publishDesc';
+    }
+  }
+
+  // ---------- 从共享数据目录加载（部署到 GitHub Pages 时自动生效） ----------
+  async function loadRemote() {
+    try {
+      const idxResp = await fetch('data/index.json?v=' + Date.now());
+      if (!idxResp.ok) return;
+      const idx = await idxResp.json();
+      const list = Array.isArray(idx.dates) ? idx.dates : [];
+      const files = [];
+      for (const item of list) {
+        try {
+          const resp = await fetch('data/' + item.file + '?v=' + Date.now());
+          if (!resp.ok) continue;
+          const d = await resp.json();
+          const rows = new Map();
+          (d.rows || []).forEach(r => rows.set(r.key, r));
+          files.push({ name: item.file, date: item.date, rows });
+        } catch (e) { /* 跳过单个文件加载失败 */ }
+      }
+      if (files.length === 0) return;
+      fileList = files;
+      save();
+      rebuild();
+    } catch (e) {
+      console.warn('共享数据加载失败', e);
+    }
+  }
+
+  // ---------- 解析单个 Excel ----------
+  async function parseFile(file) {
+    const date = (file.name.match(/(\d{8})/) || [])[1];
+    if (!date) throw new Error('文件名未识别到 8 位日期：' + file.name);
+
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null });
+
+    // 定位表头行（含「笔记标题」和「首次发布时间」）
+    let headerIdx = -1;
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i] || [];
+      if (r.some(c => c === '笔记标题') && r.some(c => c === '首次发布时间')) { headerIdx = i; break; }
+    }
+    if (headerIdx < 0) throw new Error('未找到表头行：' + file.name);
+    const header = rows[headerIdx].map(c => (c == null ? '' : String(c).trim()));
+
+    // 列名 -> 列号
+    const col = (name) => header.indexOf(name);
+    const iTitle = col('笔记标题');
+    const iPublish = col('首次发布时间');
+    const iGenre = col('体裁');
+    const metricIdx = {};
+    METRICS.forEach(m => { metricIdx[m] = col(m); });
+
+    const rowMap = new Map();
+    for (let i = headerIdx + 1; i < rows.length; i++) {
+      const r = rows[i] || [];
+      const publish = r[iPublish];
+      if (publish == null || publish === '') continue;
+      const key = normKey(publish);
+      const metrics = {};
+      METRICS.forEach(m => {
+        const idx = metricIdx[m];
+        const v = idx >= 0 ? r[idx] : null;
+        metrics[m] = (v === null || v === '' || Number.isNaN(Number(v))) ? null : Number(v);
+      });
+      rowMap.set(key, {
+        key,
+        title: r[iTitle] != null ? String(r[iTitle]) : '',
+        publish: String(publish),
+        genre: iGenre >= 0 && r[iGenre] != null ? String(r[iGenre]) : '',
+        metrics
+      });
+    }
+    return { name: file.name, date, rows: rowMap };
+  }
+
+  // ---------- 构建笔记序列 + 计算增量 ----------
+  // 取某笔记最新累计指标值（用于观看量/曝光量排序），无数据返回 -1
+  function latestMetric(n, metric) {
+    const d = n.deltas && n.deltas[n.deltas.length - 1];
+    const v = d && d.total ? d.total[metric] : null;
+    return v == null ? -1 : v;
+  }
+
+  // 取某笔记最近区间新增指标值（用于昨日观看量排序），无数据返回 -1
+  function latestInc(n, metric) {
+    const d = n.deltas && n.deltas[n.deltas.length - 1];
+    const v = d && d.inc ? d.inc[metric] : null;
+    return v == null ? -1 : v;
+  }
+
+  function rebuild() {
+    // 按日期排序，同日期覆盖
+    const byDate = new Map();
+    fileList.forEach(f => byDate.set(f.date, f));
+    const sorted = Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+
+    const noteMap = new Map();
+    sorted.forEach(f => {
+      f.rows.forEach((row, key) => {
+        if (!noteMap.has(key)) {
+          noteMap.set(key, { key, title: row.title, publish: row.publish, genre: row.genre, points: [] });
+        }
+        noteMap.get(key).points.push({
+          date: f.date,
+          dateStr: fmtShort(f.date),
+          metrics: row.metrics
+        });
+      });
+    });
+
+    // 计算每个笔记的总量（累计值）与区间新增
+    notes = [];
+    noteMap.forEach(n => {
+      const pts = n.points.sort((a, b) => a.date.localeCompare(b.date));
+      const deltas = [];
+      for (let i = 0; i < pts.length; i++) {
+        const cur = pts[i];
+        const total = {};   // 总量 = Excel 原始累计值（人均观看时长即当天值）
+        const inc = {};     // 区间新增
+        METRICS.forEach(k => { total[k] = cur.metrics[k]; });
+
+        if (i === 0) {
+          // 首日快照：区间新增取当天累计值
+          METRICS.forEach(k => { inc[k] = cur.metrics[k]; });
+          deltas.push({ date: cur.date, dateStr: cur.dateStr, ts: parseDate8(cur.date).getTime(), days: 0, span: '首日快照', total, inc });
+        } else {
+          const prev = pts[i - 1];
+          const days = diffDays(prev.date, cur.date);
+          METRICS.forEach(k => {
+            if (k === '人均观看时长') {
+              inc[k] = null; // 人均值不参与区间计算
+            } else if (k === '封面点击率') {
+              const e1 = prev.metrics['曝光'], e2 = cur.metrics['曝光'];
+              const v1 = prev.metrics['观看量'], v2 = cur.metrics['观看量'];
+              if (e1 == null || e2 == null || v1 == null || v2 == null) {
+                inc[k] = null;
+              } else {
+                const dExpose = e2 - e1, dView = v2 - v1;
+                inc[k] = dExpose > 0 ? round(dView / dExpose, 4) : null;
+              }
+            } else {
+              const a = prev.metrics[k], b = cur.metrics[k];
+              inc[k] = (a === null || b === null) ? null : round(b - a, 4);
+            }
+          });
+          deltas.push({ date: cur.date, dateStr: cur.dateStr, ts: parseDate8(cur.date).getTime(), days, span: `${prev.dateStr} → ${cur.dateStr}`, total, inc });
+        }
+      }
+      n.deltas = deltas;
+      notes.push(n);
+    });
+
+    // 排序：按所选排序方式（自定义需有拖拽顺序，否则回退到发布时间倒序）
+    const byPublishDesc = (a, b) => a.publish < b.publish ? 1 : -1;
+    if (sortMode === 'custom' && noteOrder.length > 0) {
+      const orderMap = new Map();
+      noteOrder.forEach((k, i) => orderMap.set(k, i));
+      notes.sort((a, b) => {
+        const ia = orderMap.has(a.key) ? orderMap.get(a.key) : Number.MAX_SAFE_INTEGER;
+        const ib = orderMap.has(b.key) ? orderMap.get(b.key) : Number.MAX_SAFE_INTEGER;
+        if (ia !== ib) return ia - ib;
+        return byPublishDesc(a, b);
+      });
+    } else if (sortMode === 'views') {
+      notes.sort((a, b) => {
+        const va = latestMetric(a, '观看量'), vb = latestMetric(b, '观看量');
+        if (va !== vb) return vb - va;
+        return byPublishDesc(a, b);
+      });
+    } else if (sortMode === 'yesterdayViews') {
+      notes.sort((a, b) => {
+        const va = latestInc(a, '观看量'), vb = latestInc(b, '观看量');
+        if (va !== vb) return vb - va;
+        return byPublishDesc(a, b);
+      });
+    } else if (sortMode === 'exposure') {
+      notes.sort((a, b) => {
+        const va = latestMetric(a, '曝光'), vb = latestMetric(b, '曝光');
+        if (va !== vb) return vb - va;
+        return byPublishDesc(a, b);
+      });
+    } else if (sortMode === 'publishAsc') {
+      notes.sort((a, b) => a.publish > b.publish ? 1 : -1);
+    } else {
+      notes.sort(byPublishDesc);
+    }
+
+    // 保证始终选中一条笔记（选中项失效时切到第一条可见笔记）
+    if (!selectedKey || !notes.some(n => n.key === selectedKey)) {
+      const firstVisible = notes.find(n => !hiddenKeys.has(n.key));
+      selectedKey = firstVisible ? firstVisible.key : null;
+    }
+
+    renderFileList();
+    renderNoteList();
+    renderMetricBar();
+    renderChart();
+    save();
+  }
+
+  // ---------- 渲染 ----------
+  function renderFileList() {
+    const el = $('fileList');
+    el.innerHTML = '';
+    const sorted = fileList.slice().sort((a, b) => a.date.localeCompare(b.date));
+    sorted.forEach(f => {
+      const tag = document.createElement('span');
+      tag.className = 'file-tag';
+      tag.innerHTML = `<span>${f.name}</span><span class="date">${fmtDate8(f.date)}</span>`;
+      const del = document.createElement('span');
+      del.className = 'del';
+      del.textContent = '✕';
+      del.title = '移除该文件';
+      del.onclick = () => {
+        fileList = fileList.filter(x => x !== f);
+        rebuild();
+      };
+      tag.appendChild(del);
+      el.appendChild(tag);
+    });
+  }
+
+  function renderNoteList() {
+    const el = $('noteList');
+    const kw = $('search').value.trim().toLowerCase();
+    // 仅搜索时禁用拖拽（隐藏笔记在独立折叠区，不影响可见列表拖拽）
+    if (sortable) sortable.option('disabled', !!kw);
+    renderSortSelect();
+    el.innerHTML = '';
+    if (notes.length === 0) { el.innerHTML = '<div class="empty">导入文件后显示笔记列表</div>'; return; }
+
+    const match = (n) => !kw || n.title.toLowerCase().includes(kw) || n.publish.includes(kw);
+    const visible = notes.filter(n => !hiddenKeys.has(n.key) && match(n));
+    const hidden = notes.filter(n => hiddenKeys.has(n.key) && match(n));
+
+    if (visible.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = kw ? '无匹配笔记' : '无可显示笔记';
+      el.appendChild(empty);
+    } else {
+      visible.forEach(n => el.appendChild(buildNoteItem(n, true)));
+    }
+
+    if (hiddenKeys.size > 0) {
+      el.appendChild(buildHiddenSection(hidden));
+    }
+  }
+
+  // 眼睛图标：off=true 表示斜线（已隐藏）
+  const eyeIcon = (off) => off
+    ? '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>'
+    : '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+
+  function buildNoteItem(n, showHandle) {
+    const isHidden = hiddenKeys.has(n.key);
+    const div = document.createElement('div');
+    div.className = 'note-item' + (n.key === selectedKey ? ' active' : '') + (isHidden ? ' hidden' : '');
+    div.dataset.key = n.key;
+    const genre = n.genre ? `<span class="genre">${n.genre}</span>` : '';
+    div.innerHTML =
+      `<div class="note-content">` +
+        `<div class="title" title="${n.title}">${n.title}</div>` +
+        `<div class="meta">${n.publish}<br>${n.deltas.length} 个日期${genre}</div>` +
+      `</div>` +
+      `<div class="note-actions">` +
+        (showHandle ? `<span class="drag-handle" title="拖动排序">⋮⋮</span>` : '') +
+        `<button class="hide-btn" title="${isHidden ? '取消隐藏' : '隐藏该笔记'}">${eyeIcon(isHidden)}</button>` +
+      `</div>`;
+    div.onclick = () => { selectedKey = n.key; renderNoteList(); renderChart(); };
+    div.querySelector('.hide-btn').onclick = (e) => {
+      e.stopPropagation();
+      toggleHidden(n.key);
+    };
+    return div;
+  }
+
+  function buildHiddenSection(hiddenList) {
+    const section = document.createElement('div');
+    section.className = 'hidden-section';
+    const header = document.createElement('div');
+    header.className = 'hidden-header';
+    header.innerHTML =
+      `<span>已隐藏 (${hiddenKeys.size})</span>` +
+      `<span class="arrow">${hiddenCollapsed ? '▸' : '▾'}</span>`;
+    header.title = hiddenCollapsed ? '展开已隐藏的笔记' : '收起已隐藏的笔记';
+    header.onclick = () => { hiddenCollapsed = !hiddenCollapsed; renderNoteList(); };
+    section.appendChild(header);
+    if (!hiddenCollapsed) {
+      hiddenList.forEach(n => section.appendChild(buildNoteItem(n, false)));
+    }
+    return section;
+  }
+
+  function toggleHidden(key) {
+    if (hiddenKeys.has(key)) hiddenKeys.delete(key);
+    else hiddenKeys.add(key);
+    // 若隐藏的是当前选中笔记，切到第一条可见笔记
+    if (hiddenKeys.has(key) && selectedKey === key) {
+      const visible = notes.find(n => !hiddenKeys.has(n.key));
+      selectedKey = visible ? visible.key : null;
+    }
+    save();
+    renderNoteList();
+    renderChart();
+  }
+
+  function renderSortSelect() {
+    $('sortSelect').value = sortMode;
+  }
+
+  function renderMetricBar() {
+    const el = $('metricBar');
+    el.innerHTML = '';
+    METRICS.forEach(m => {
+      const on = DEFAULT_ON.has(m);
+      const chip = document.createElement('span');
+      chip.className = 'metric-chip' + (on ? ' on' : '');
+      chip.textContent = m;
+      chip.onclick = () => {
+        DEFAULT_ON.has(m) ? DEFAULT_ON.delete(m) : DEFAULT_ON.add(m);
+        renderMetricBar();
+        renderChart();
+      };
+      el.appendChild(chip);
+    });
+  }
+
+  function currentNote() { return notes.find(n => n.key === selectedKey) || null; }
+
+  function renderChart() {
+    if (!chart) chart = echarts.init($('chart'));
+    const note = currentNote();
+    if (!note) { chart.clear(); chart.setOption({ title: { text: '请先选择一条笔记', left: 'center', top: 'middle', textStyle: { color: '#7a8194', fontSize: 14 } } }); return; }
+
+    const deltas = note.deltas;
+
+    // 指标分组：组内共用一个左轴；right 列表里的指标用右轴（量纲差异大时分开）
+    const GROUPS = [
+      { metrics: ['曝光', '观看量'], right: [] },
+      { metrics: ['点赞', '评论', '收藏', '涨粉', '分享', '弹幕'], right: [] },
+      { metrics: ['封面点击率', '人均观看时长'], right: ['人均观看时长'] }
+    ];
+    // 展示缩放：量级接近的指标放大后共轴，使趋势更明显（tooltip 仍显示真实值）
+    const SCALE = { '观看量': 5 };
+
+    // 仅保留有勾选指标的组
+    const activeGroups = GROUPS
+      .map(g => ({ metrics: g.metrics.filter(m => DEFAULT_ON.has(m)), right: g.right }))
+      .filter(g => g.metrics.length > 0);
+
+    if (!activeGroups.length) {
+      chart.clear();
+      chart.setOption({ title: { text: '请勾选至少一个指标', left: 'center', top: 'middle', textStyle: { color: '#7a8194', fontSize: 14 } } });
+      return;
+    }
+
+    // 布局：每组一个子图，纵向排列，共享时间轴
+    const GRID_H = 160;
+    const GRID_GAP = 44;
+    const TOP = 64;
+    const BOTTOM = 60;
+    const n = activeGroups.length;
+    $('chart').style.height = (TOP + n * GRID_H + (n - 1) * GRID_GAP + BOTTOM) + 'px';
+
+    const grids = [];
+    const xAxes = [];
+    const yAxes = [];
+    const series = [];
+
+    let yIdx = 0;
+    activeGroups.forEach((g, gi) => {
+      const hasRight = g.right.length > 0 && g.metrics.some(m => g.right.includes(m));
+      grids.push({
+        left: 55,
+        right: hasRight ? 150 : 95,
+        top: TOP + gi * (GRID_H + GRID_GAP),
+        height: GRID_H
+      });
+
+      xAxes.push({
+        type: 'time',
+        gridIndex: gi,
+        axisLine: { show: gi === n - 1 },
+        axisTick: { show: false },
+        axisLabel: { formatter: function (val) { return fmtMD(val); }, show: gi === n - 1 }
+      });
+
+      yAxes.push({
+        type: 'value',
+        gridIndex: gi,
+        position: 'left',
+        splitLine: { lineStyle: { color: '#eef0f6' } }
+      });
+      const leftY = yIdx++;
+      let rightY = null;
+      if (hasRight) {
+        yAxes.push({
+          type: 'value',
+          gridIndex: gi,
+          position: 'right',
+          splitLine: { show: false }
+        });
+        rightY = yIdx++;
+      }
+
+      const nMetrics = g.metrics.length;
+      g.metrics.forEach((m, mi) => {
+        const scale = SCALE[m] || 1;
+        const offsetY = Math.round((mi - (nMetrics - 1) / 2) * 24);
+        series.push({
+          name: scale > 1 ? m + '(×' + scale + ')' : m,
+          type: 'line',
+          xAxisIndex: gi,
+          yAxisIndex: (hasRight && g.right.includes(m)) ? rightY : leftY,
+          smooth: true,
+          connectNulls: false,
+          symbolSize: 6,
+          lineStyle: { width: 2 },
+          clip: false,
+          data: deltas.map((d, di) => {
+            const v = d.total[m] == null ? null : d.total[m] * scale;
+            if (di === deltas.length - 1) {
+              const real = d.total[m];
+              const labelName = m;
+              return {
+                value: [d.ts, v],
+                label: {
+                  show: true,
+                  formatter: () => labelName + '\n' + formatVal(m, real),
+                  position: 'right',
+                  distance: 6,
+                  offset: [0, offsetY],
+                  color: 'inherit',
+                  fontSize: 11,
+                  lineHeight: 14
+                }
+              };
+            }
+            return [d.ts, v];
+          })
+        });
+      });
+    });
+
+    const option = {
+      title: {
+        text: note.title,
+        subtext: note.publish,
+        left: 0,
+        top: 0,
+        textStyle: { fontSize: 16, overflow: 'truncate', width: '90%' },
+        subtextStyle: { color: '#7a8194', fontSize: 12 }
+      },
+      tooltip: {
+        trigger: 'axis',
+        formatter: function (params) {
+          if (!params || !params.length) return '';
+          const i = params[0].dataIndex;
+          const d = deltas[i];
+          const isFirst = i === 0;
+
+          const row = (marker, m, v) =>
+            '<div style="display:flex;justify-content:space-between;gap:20px;">' +
+            '<span>' + marker + m + '</span>' +
+            '<span style="font-weight:600;">' + v + '</span></div>';
+
+          let html = '<div style="font-weight:600;margin-bottom:6px;">' + fmtDate8(d.date) + '</div>';
+
+          // 区间新增块
+          html += '<div style="color:#7a8194;font-size:12px;margin-bottom:4px;">' +
+            (isFirst ? '首日快照（累计值）' : '区间新增 · ' + d.span + '（共 ' + d.days + ' 天）') + '</div>';
+          params.forEach(p => {
+            const key = p.seriesName.replace(/\(×\d+\)$/, '');
+            const v = d.inc[key];
+            let txt;
+            if (key === '人均观看时长' || v === null || v === undefined) txt = '-';
+            else txt = (isFirst ? '' : (v >= 0 ? '+' : '')) + formatVal(key, v);
+            html += row(p.marker, p.seriesName, txt);
+          });
+
+          // 总量块
+          html += '<div style="border-top:1px dashed #e0e3ec;margin-top:6px;padding-top:6px;color:#7a8194;font-size:12px;margin-bottom:4px;">总量（累计）</div>';
+          params.forEach(p => {
+            const key = p.seriesName.replace(/\(×\d+\)$/, '');
+            const v = d.total[key];
+            html += row(p.marker, p.seriesName, v === null || v === undefined ? '-' : formatVal(key, v));
+          });
+
+          return html;
+        }
+      },
+      axisPointer: { link: [{ xAxisIndex: 'all' }] },
+      legend: { top: 0, right: 0, type: 'scroll' },
+      grid: grids,
+      xAxis: xAxes,
+      yAxis: yAxes,
+      dataZoom: [
+        { type: 'inside', xAxisIndex: xAxes.map((_, i) => i) },
+        { type: 'slider', xAxisIndex: xAxes.map((_, i) => i), height: 20, bottom: 8 }
+      ],
+      series: series
+    };
+    chart.setOption(option, true);
+    chart.resize();
+  }
+
+  // ---------- 事件 ----------
+  btnImport.onclick = () => fileInput.click();
+  fileInput.onchange = async () => {
+    const files = Array.from(fileInput.files).filter(f => !f.name.startsWith('~$'));
+    if (!files.length) return;
+    const errors = [];
+    for (const f of files) {
+      try {
+        const parsed = await parseFile(f);
+        // 同日期覆盖
+        fileList = fileList.filter(x => x.date !== parsed.date);
+        fileList.push(parsed);
+      } catch (e) {
+        errors.push(e.message || String(e));
+      }
+    }
+    fileInput.value = '';
+    rebuild();
+    if (errors.length) alert('部分文件解析失败：\n' + errors.join('\n'));
+  };
+  $('search').oninput = renderNoteList;
+  $('btnClear').onclick = () => {
+    if (!fileList.length) return;
+    if (!confirm('确定清空所有已导入的数据吗？')) return;
+    fileList = [];
+    selectedKey = null;
+    rebuild();
+  };
+  window.addEventListener('resize', () => { if (chart) chart.resize(); });
+
+  // 初始化：先恢复历史数据，再构建
+  load();
+
+  // 拖拽排序（仅列表未搜索时启用）
+  sortable = new Sortable($('noteList'), {
+    animation: 150,
+    handle: '.drag-handle',
+    filter: '.hidden-section',
+    onEnd: function () {
+      noteOrder = Array.from($('noteList').children).map(c => c.dataset.key).filter(Boolean);
+      sortMode = 'custom';
+      rebuild();
+    }
+  });
+
+  $('sortSelect').onchange = () => {
+    sortMode = $('sortSelect').value;
+    rebuild();
+  };
+
+  rebuild();
+
+  // 部署到 GitHub Pages 时，自动从 data/ 目录拉取共享数据（本地无 data 目录则静默跳过）
+  loadRemote();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+{
+  "name": "note-trend-sync",
+  "version": "1.0.0",
+  "private": true,
+  "description": "笔记数据趋势分析 - 本地同步脚本依赖",
+  "dependencies": {
+    "playwright": "^1.62.1",
+    "xlsx": "^0.18.5"
+  }
+}
