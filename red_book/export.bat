@@ -15,9 +15,8 @@ if not exist "%TOOLS%\node_modules\playwright" (
   call npm.cmd install playwright
 )
 
-if not exist "%TOOLS%\ms-playwright" (
+if not exist "E:\tools\playwright-browsers\chromium-*" (
   echo 首次运行，正在下载浏览器（国内镜像，约 300MB，请耐心等待）...
-  set "PLAYWRIGHT_BROWSERS_PATH=%TOOLS%\ms-playwright"
   set "PLAYWRIGHT_DOWNLOAD_HOST=https://npmmirror.com/mirrors/playwright"
   call npx.cmd playwright install chromium
 )

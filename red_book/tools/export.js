@@ -4,8 +4,6 @@
 
 const path = require('path');
 const fs = require('fs');
-// 指定浏览器下载目录为项目内（避免写入系统目录受限）
-process.env.PLAYWRIGHT_BROWSERS_PATH = path.join(__dirname, 'ms-playwright');
 const { chromium } = require('playwright');
 
 const ROOT = path.resolve(__dirname, '..');
