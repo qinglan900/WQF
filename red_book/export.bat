@@ -24,4 +24,12 @@ if not exist "E:\tools\playwright-browsers\chromium-*" (
 echo.
 node "%TOOLS%\export.js"
 echo.
-pause
+
+echo 是否立即执行 sync.bat 同步数据？（5 秒无输入则默认执行）
+choice /C YN /T 5 /D Y /M "[Y/N]"
+if errorlevel 2 (
+  echo 已跳过同步。
+  pause
+) else (
+  call "%~dp0sync.bat"
+)
