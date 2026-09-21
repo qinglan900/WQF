@@ -1,9 +1,12 @@
 // 小红书「导出数据」自动下载脚本
-// 功能：打开创作者后台 -> 等待登录 -> 选择「笔记首发时间」（START_DATE 至当天）-> 等数据刷新 -> 点击「导出数据」-> 下载到 excel/ 并加日期后缀
+// 功能：拉取 git 最新数据 -> 打开创作者后台 -> 等待登录 -> 选择「笔记首发时间」（START_DATE 至当天）-> 等数据刷新 -> 点击「导出数据」-> 下载到 excel/
+// 冲突处理：若当天的同名 Excel 已存在（本地或 git），先存为临时文件并询问：替换（5 秒无输入默认）/ 保留现有
 // 首次运行需手动登录一次（手机号 + 短信验证码），登录态保存在 tools/.profile 中复用
 
 const path = require('path');
 const fs = require('fs');
+const readline = require('readline');
+const { spawnSync } = require('child_process');
 const { chromium } = require('playwright');
 
 const ROOT = path.resolve(__dirname, '..');
@@ -23,6 +26,70 @@ function today8() {
 function parseYMD(s) {
   const [y, m, d] = s.split('-').map(Number);
   return { y, m, d };
+}
+
+function formatTime(d) {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+// 导出前先拉取 git 最新数据（best-effort）：确保「当天文件已存在」的判断包含远程（其他电脑可能已推送当天数据）
+function gitPullBestEffort() {
+  let r;
+  try {
+    r = spawnSync('git', ['pull', '--rebase', '--autostash'], { cwd: ROOT, encoding: 'utf8' });
+  } catch (e) {
+    return { ok: false, msg: String(e.message) };
+  }
+  if (r.error) return { ok: false, msg: '未找到 git 命令' };
+  return { ok: r.status === 0, msg: ((r.stderr || '') + (r.stdout || '')).trim() };
+}
+
+// 已存在的当天文件的「生成时间」：优先取 git 提交时间（即上传电脑的导出时刻），否则取本地文件修改时间
+function existingFileTime(target) {
+  const rel = path.relative(ROOT, target);
+  try {
+    const r = spawnSync('git', ['log', '-1', '--format=%ci', '--', rel], { cwd: ROOT, encoding: 'utf8' });
+    const c = (r.stdout || '').trim();
+    if (!r.error && r.status === 0 && c) return { time: c.replace(/\s+[+-]\d{4}$/, ''), src: 'git 提交记录' };
+  } catch (e) { /* 忽略，退回本地时间 */ }
+  try {
+    return { time: formatTime(fs.statSync(target).mtime), src: '本地文件时间' };
+  } catch (e) {
+    return { time: '未知', src: '' };
+  }
+}
+
+// 当天 Excel 已存在时的询问：5 秒无输入默认「替换」；输入 2 保留现有文件
+function askReplaceOrKeep(target) {
+  return new Promise((resolve) => {
+    const info = existingFileTime(target);
+    console.log('');
+    console.log(`检测到当天的 Excel 已存在：${path.basename(target)}`);
+    console.log(`  现有文件的生成时间：${info.time}${info.src ? '（' + info.src + '）' : ''}`);
+    console.log(`  本次新导出的生成时间：${formatTime(new Date())}（刚从小红书后台导出）`);
+    console.log('两份只能保留一份作为最新数据，请选择：');
+    console.log('  [1] 用新导出替换现有文件（5 秒无输入默认执行）');
+    console.log('  [2] 保留现有文件，丢弃本次导出');
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    let settled = false;
+    const finish = (keep) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      rl.close();
+      resolve(keep);
+    };
+    const timer = setTimeout(() => {
+      console.log('（5 秒无输入，默认替换）');
+      finish(false);
+    }, 5000);
+    rl.on('line', (line) => {
+      const s = (line || '').trim();
+      clearTimeout(timer);
+      finish(s === '2');
+    });
+    rl.on('close', () => finish(false)); // 无交互输入（如管道/EOF）时默认替换
+  });
 }
 
 // 打开日期范围选择面板
@@ -91,6 +158,17 @@ async function pickDateRange(page, start, end) {
 
 (async () => {
   if (!fs.existsSync(EXCEL_DIR)) fs.mkdirSync(EXCEL_DIR, { recursive: true });
+
+  // 先与远程对齐（best-effort），确保「当天文件已存在」的判断包含 git 上其他电脑推送的版本
+  console.log('正在从 GitHub 拉取最新数据...');
+  const pull = gitPullBestEffort();
+  if (pull.ok) console.log('已与远程保持一致。');
+  else console.warn('git pull 未成功，将仅按本地文件判断：' + pull.msg);
+
+  // 清理上次可能残留的临时下载文件（*.part，sync 解析时会自动跳过该后缀）
+  for (const f of fs.readdirSync(EXCEL_DIR)) {
+    if (f.endsWith('.part')) { try { fs.unlinkSync(path.join(EXCEL_DIR, f)); } catch (e) {} }
+  }
 
   const context = await chromium.launchPersistentContext(PROFILE_DIR, {
     headless: false,
@@ -161,21 +239,49 @@ async function pickDateRange(page, start, end) {
     const suggested = download.suggestedFilename();
     const ext = path.extname(suggested) || '.xlsx';
     const base = path.basename(suggested, ext);
-    let target = path.join(EXCEL_DIR, `${base}-${today8()}${ext}`);
-    try {
-      await download.saveAs(target);
-    } catch (e) {
-      // 目标文件可能被 Excel 打开占用，换个带时间戳的文件名保存
-      if (e && /EBUSY|EPERM|resource busy/i.test(String(e.message))) {
-        const d = new Date();
-        target = path.join(EXCEL_DIR, `${base}-${today8()}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}${ext}`);
-        console.warn('目标文件被占用（可能正在 Excel 中打开），改用新文件名保存。');
-        await download.saveAs(target);
+    const target = path.join(EXCEL_DIR, `${base}-${today8()}${ext}`);
+
+    if (fs.existsSync(target)) {
+      // 当天文件已存在：先存为临时文件，询问用户是替换还是保留现有
+      const tmp = target + '.part';
+      await download.saveAs(tmp);
+      const keep = await askReplaceOrKeep(target);
+      if (keep) {
+        fs.unlinkSync(tmp);
+        console.log(`已保留现有文件：${target}`);
       } else {
-        throw e;
+        try {
+          fs.renameSync(tmp, target);
+          console.log(`已用新导出替换：${target}`);
+        } catch (e) {
+          // 现有文件被占用（可能正在 Excel 中打开）无法覆盖，改用带时间戳的新文件名
+          if (/EBUSY|EPERM|resource busy/i.test(String(e.message))) {
+            const d = new Date();
+            const alt = path.join(EXCEL_DIR, `${base}-${today8()}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}${ext}`);
+            fs.renameSync(tmp, alt);
+            console.warn(`现有文件被占用（可能正在 Excel 中打开），新导出已另存为：${alt}`);
+          } else {
+            throw e;
+          }
+        }
       }
+    } else {
+      let savedAs = target;
+      try {
+        await download.saveAs(target);
+      } catch (e) {
+        // 目标文件可能被 Excel 打开占用，换个带时间戳的文件名保存
+        if (e && /EBUSY|EPERM|resource busy/i.test(String(e.message))) {
+          const d = new Date();
+          savedAs = path.join(EXCEL_DIR, `${base}-${today8()}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}${ext}`);
+          console.warn('目标文件被占用（可能正在 Excel 中打开），改用新文件名保存。');
+          await download.saveAs(savedAs);
+        } else {
+          throw e;
+        }
+      }
+      console.log(`已下载并保存为：${savedAs}`);
     }
-    console.log(`已下载并保存为：${target}`);
   } else {
     console.log('未检测到直接下载。可能弹出了其他对话框，请在浏览器中手动完成操作后重新运行本脚本。');
   }
