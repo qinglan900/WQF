@@ -3,3 +3,6 @@ node_modules/
 *.log
 tools/ms-playwright/
 tools/.profile/
+# 冲突未处理时转存的新下载（待人工确认，不应进入数据管线）
+excel_conflicts/
+*.part

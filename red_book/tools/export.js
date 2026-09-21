@@ -1,6 +1,7 @@
 // 小红书「导出数据」自动下载脚本
 // 功能：拉取 git 最新数据 -> 打开创作者后台 -> 等待登录 -> 选择「笔记首发时间」（START_DATE 至当天）-> 等数据刷新 -> 点击「导出数据」-> 下载到 excel/
-// 冲突处理：若当天的同名 Excel 已存在（本地或 git），先存为临时文件并询问：替换（5 秒无输入默认）/ 保留现有
+// 冲突处理：若当天的同名 Excel 已存在，先关闭浏览器，再列出 git 版本 / 本机现有 / 本次新下载三个候选及各自生成时间，
+//           必须手动输入编号选择保留哪一份（无自动默认）
 // 首次运行需手动登录一次（手机号 + 短信验证码），登录态保存在 tools/.profile 中复用
 
 const path = require('path');
@@ -11,6 +12,8 @@ const { chromium } = require('playwright');
 
 const ROOT = path.resolve(__dirname, '..');
 const EXCEL_DIR = path.join(ROOT, 'excel');
+// 冲突未处理时，把新下载转存到这里：不在 excel 目录内，sync 不会解析、也不会被提交，避免同日期文件混淆数据
+const CONFLICTS_DIR = path.join(ROOT, 'excel_conflicts');
 const PROFILE_DIR = path.join(__dirname, '.profile');
 
 // 笔记首发时间的起始日期（固定），结束日期为当天
@@ -44,52 +47,135 @@ function gitPullBestEffort() {
   return { ok: r.status === 0, msg: ((r.stderr || '') + (r.stdout || '')).trim() };
 }
 
-// 已存在的当天文件的「生成时间」：优先取 git 提交时间（即上传电脑的导出时刻），否则取本地文件修改时间
-function existingFileTime(target) {
-  const rel = path.relative(ROOT, target);
+// git 仓库中该文件的版本信息（最后一次提交的时间与短哈希）
+function gitVersionInfo(target) {
+  const rel = path.relative(ROOT, target).replace(/\\/g, '/');
+  const r = spawnSync('git', ['log', '-1', '--format=%ci|%h', '--', rel], { cwd: ROOT, encoding: 'utf8' });
+  if (r.error || r.status !== 0) return null;
+  const line = (r.stdout || '').trim();
+  if (!line) return null;
+  const [ci, hash] = line.split('|');
+  if (!ci) return null;
+  return { time: ci.replace(/\s+[+-]\d{4}$/, ''), hash: hash || '' };
+}
+
+// 本机现有文件的信息（修改时间、大小）
+function localFileInfo(target) {
   try {
-    const r = spawnSync('git', ['log', '-1', '--format=%ci', '--', rel], { cwd: ROOT, encoding: 'utf8' });
-    const c = (r.stdout || '').trim();
-    if (!r.error && r.status === 0 && c) return { time: c.replace(/\s+[+-]\d{4}$/, ''), src: 'git 提交记录' };
-  } catch (e) { /* 忽略，退回本地时间 */ }
-  try {
-    return { time: formatTime(fs.statSync(target).mtime), src: '本地文件时间' };
+    const st = fs.statSync(target);
+    return { time: formatTime(st.mtime), size: st.size };
   } catch (e) {
-    return { time: '未知', src: '' };
+    return null;
   }
 }
 
-// 当天 Excel 已存在时的询问：5 秒无输入默认「替换」；输入 2 保留现有文件
-function askReplaceOrKeep(target) {
+// 本机现有文件是否与 git 仓库中（HEAD）的版本内容一致
+function isSameAsGit(target) {
+  const rel = path.relative(ROOT, target).replace(/\\/g, '/');
+  const r = spawnSync('git', ['diff', '--quiet', 'HEAD', '--', rel], { cwd: ROOT, encoding: 'utf8' });
+  return !r.error && r.status === 0;
+}
+
+// 当天 Excel 已存在时：列出三个候选数据源与各自生成时间，必须手动输入编号选择，无自动默认
+async function chooseVersion(target) {
+  const gitInfo = gitVersionInfo(target);
+  const localInfo = localFileInfo(target);
+  const sameAsGit = localInfo ? isSameAsGit(target) : false;
+
+  console.log('');
+  console.log('='.repeat(64));
+  console.log(`检测到当天的 Excel 已存在：${path.basename(target)}`);
+  console.log('本次又下载了一份新的，请手动输入编号选择保留哪一份（不会自动选择）：');
+  console.log('');
+  console.log(`  [1] git 仓库中的版本   生成时间：${gitInfo ? `${gitInfo.time}（提交 ${gitInfo.hash}）` : '不存在'}`);
+  console.log(`  [2] 本机现有文件       生成时间：${localInfo ? `${localInfo.time}${sameAsGit ? '（内容与 git 版本一致）' : '（与 git 版本不同，本机改动尚未提交）'}` : '不存在'}`);
+  console.log(`  [3] 本次新下载         生成时间：${formatTime(new Date())}（刚从小红书后台导出）`);
+  console.log('='.repeat(64));
+
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   return new Promise((resolve) => {
-    const info = existingFileTime(target);
-    console.log('');
-    console.log(`检测到当天的 Excel 已存在：${path.basename(target)}`);
-    console.log(`  现有文件的生成时间：${info.time}${info.src ? '（' + info.src + '）' : ''}`);
-    console.log(`  本次新导出的生成时间：${formatTime(new Date())}（刚从小红书后台导出）`);
-    console.log('两份只能保留一份作为最新数据，请选择：');
-    console.log('  [1] 用新导出替换现有文件（5 秒无输入默认执行）');
-    console.log('  [2] 保留现有文件，丢弃本次导出');
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    let settled = false;
-    const finish = (keep) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
+    let done = false;
+    const finish = (choice) => {
+      if (done) return;
+      done = true;
       rl.close();
-      resolve(keep);
+      resolve(choice);
     };
-    const timer = setTimeout(() => {
-      console.log('（5 秒无输入，默认替换）');
-      finish(false);
-    }, 5000);
-    rl.on('line', (line) => {
-      const s = (line || '').trim();
-      clearTimeout(timer);
-      finish(s === '2');
-    });
-    rl.on('close', () => finish(false)); // 无交互输入（如管道/EOF）时默认替换
+    const ask = () => {
+      rl.question('请输入 1 / 2 / 3 后按回车：', (line) => {
+        const s = (line || '').trim();
+        if (s === '1') {
+          if (!gitInfo) { console.log('git 仓库中不存在该文件，请重新选择。'); return ask(); }
+          return finish(1);
+        }
+        if (s === '2') {
+          if (!localInfo) { console.log('本机不存在该文件，请重新选择。'); return ask(); }
+          return finish(2);
+        }
+        if (s === '3') return finish(3);
+        console.log('输入无效，请输入 1、2 或 3。');
+        ask();
+      });
+    };
+    // stdin 被关闭（非交互运行）时不自动选择，返回 0 交由上层安全处理
+    rl.on('close', () => { if (!done) { done = true; resolve(0); } });
+    ask();
   });
+}
+
+// 把未处理的新下载转存到 excel_conflicts/（带时间戳到毫秒，便于后续手动辨认且不会互相覆盖）
+function stashPending(tmp, target) {
+  fs.mkdirSync(CONFLICTS_DIR, { recursive: true });
+  const ext = path.extname(target);
+  const base = path.basename(target, ext);
+  const d = new Date();
+  const ms = String(d.getMilliseconds()).padStart(3, '0');
+  const dst = path.join(CONFLICTS_DIR, `${base}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}${ms}${ext}`);
+  fs.renameSync(tmp, dst);
+  return dst;
+}
+
+// 按选择落地文件：1=采用 git 版本、2=保留本机现有、3=采用新下载、0=非交互（不覆盖，新下载转存待处理）
+function applyChoice(choice, target, tmp) {
+  if (choice === 2) {
+    fs.unlinkSync(tmp);
+    console.log(`已保留本机现有文件：${target}`);
+    return;
+  }
+
+  if (choice === 0) {
+    const dst = stashPending(tmp, target);
+    console.warn(`未进行选择（无交互终端）：本机现有文件保持不变，本次新下载已转存待处理：${dst}`);
+    return;
+  }
+
+  if (choice === 1) {
+    const rel = path.relative(ROOT, target).replace(/\\/g, '/');
+    const r = spawnSync('git', ['restore', '--source=HEAD', '--staged', '--worktree', '--', rel], { cwd: ROOT, encoding: 'utf8' });
+    if (r.error || r.status !== 0) {
+      console.error('恢复 git 版本失败：' + ((r.stderr || r.stdout || '').trim()));
+      const dst = stashPending(tmp, target);
+      console.warn(`本机现有文件保持不变，本次新下载已转存待处理：${dst}`);
+      return;
+    }
+    fs.unlinkSync(tmp);
+    console.log(`已采用 git 仓库中的版本：${target}`);
+    return;
+  }
+
+  // choice === 3：采用本次新下载
+  try {
+    fs.renameSync(tmp, target);
+    console.log(`已采用本次新下载：${target}`);
+  } catch (e) {
+    // 现有文件被占用（可能正在 Excel 中打开）无法覆盖，转存待处理而不是混淆到 excel 目录
+    if (/EBUSY|EPERM|resource busy/i.test(String(e.message))) {
+      const dst = stashPending(tmp, target);
+      console.warn(`现有文件被占用（可能正在 Excel 中打开），新下载已转存待处理：${dst}`);
+    } else {
+      throw e;
+    }
+  }
 }
 
 // 打开日期范围选择面板
@@ -240,51 +326,22 @@ async function pickDateRange(page, start, end) {
     const ext = path.extname(suggested) || '.xlsx';
     const base = path.basename(suggested, ext);
     const target = path.join(EXCEL_DIR, `${base}-${today8()}${ext}`);
+    const tmp = target + '.part';
+
+    // 先落地到临时文件，随后立即关闭浏览器，避免窗口遮挡控制台里的选择提示
+    await download.saveAs(tmp);
+    await context.close();
 
     if (fs.existsSync(target)) {
-      // 当天文件已存在：先存为临时文件，询问用户是替换还是保留现有
-      const tmp = target + '.part';
-      await download.saveAs(tmp);
-      const keep = await askReplaceOrKeep(target);
-      if (keep) {
-        fs.unlinkSync(tmp);
-        console.log(`已保留现有文件：${target}`);
-      } else {
-        try {
-          fs.renameSync(tmp, target);
-          console.log(`已用新导出替换：${target}`);
-        } catch (e) {
-          // 现有文件被占用（可能正在 Excel 中打开）无法覆盖，改用带时间戳的新文件名
-          if (/EBUSY|EPERM|resource busy/i.test(String(e.message))) {
-            const d = new Date();
-            const alt = path.join(EXCEL_DIR, `${base}-${today8()}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}${ext}`);
-            fs.renameSync(tmp, alt);
-            console.warn(`现有文件被占用（可能正在 Excel 中打开），新导出已另存为：${alt}`);
-          } else {
-            throw e;
-          }
-        }
-      }
+      // 当天文件已存在（git 或本机）：列出候选版本及生成时间，等待手动选择
+      const choice = await chooseVersion(target);
+      applyChoice(choice, target, tmp);
     } else {
-      let savedAs = target;
-      try {
-        await download.saveAs(target);
-      } catch (e) {
-        // 目标文件可能被 Excel 打开占用，换个带时间戳的文件名保存
-        if (e && /EBUSY|EPERM|resource busy/i.test(String(e.message))) {
-          const d = new Date();
-          savedAs = path.join(EXCEL_DIR, `${base}-${today8()}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}${ext}`);
-          console.warn('目标文件被占用（可能正在 Excel 中打开），改用新文件名保存。');
-          await download.saveAs(savedAs);
-        } else {
-          throw e;
-        }
-      }
-      console.log(`已下载并保存为：${savedAs}`);
+      fs.renameSync(tmp, target);
+      console.log(`已下载并保存为：${target}`);
     }
   } else {
     console.log('未检测到直接下载。可能弹出了其他对话框，请在浏览器中手动完成操作后重新运行本脚本。');
+    await context.close();
   }
-
-  await context.close();
 })();
