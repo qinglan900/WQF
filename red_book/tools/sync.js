@@ -1,5 +1,5 @@
 // 笔记数据趋势分析 - 本地一键同步脚本
-// 功能：解析 excel 目录下的 Excel -> 生成 data/*.json -> 提交并推送到 GitHub
+// 功能：先拉取远程最新数据（补全其他机器上传的 excel/data）-> 解析 excel 目录下的 Excel -> 生成 data/*.json -> 提交并推送到 GitHub
 // 用法：node sync.js  （或双击 sync.bat）
 
 const fs = require('fs');
@@ -71,7 +71,29 @@ function git(args) {
   return r.stdout;
 }
 
+// 不抛异常的 git 调用，用于 pull 等需要区分失败原因的场景
+function gitTry(args) {
+  const r = spawnSync('git', args, { cwd: ROOT, encoding: 'utf8' });
+  if (r.error) return { ok: false, msg: '未找到 git 命令，请先安装 Git：https://git-scm.com/' };
+  return { ok: r.status === 0, msg: (r.stderr || r.stdout || '').trim() };
+}
+
 function main() {
+  // 0. 先拉取远程最新数据（多人协作：本地可能缺其他机器上传的 excel/data，先补全再重建）
+  //    --autostash：本地有未提交改动时自动暂存，拉取后再恢复，避免 "unstaged changes" 报错
+  const pull = gitTry(['pull', '--rebase', '--autostash']);
+  if (!pull.ok) {
+    const conflict = /could not apply|would be overwritten|untracked working tree|CONFLICT|Auto-merging|Merge conflict/i.test(pull.msg);
+    if (conflict) {
+      console.error('git pull 失败（本地与远程存在冲突）：' + pull.msg);
+      console.error('请先手动处理冲突（如 excel/ 下有与远程同名的文件），或回退本地修改后重试。');
+      return;
+    }
+    console.warn('git pull 未成功，继续尝试同步：' + pull.msg);
+  } else {
+    console.log('已拉取远程最新数据。');
+  }
+
   // 1. 扫描 excel 目录下的 Excel（跳过 ~$ 临时锁文件）
   if (!fs.existsSync(EXCEL_DIR)) fs.mkdirSync(EXCEL_DIR, { recursive: true });
   const excelFiles = fs.readdirSync(EXCEL_DIR)
@@ -105,18 +127,26 @@ function main() {
   // 3. 提交并推送
   try {
     git(['add', 'data', 'excel', 'index.html', 'sync.bat', 'export.bat', 'README.md', '.gitignore', 'tools/sync.js', 'tools/export.js', 'tools/package.json', 'tools/package-lock.json']);
-    const status = git(['status', '--porcelain']).trim();
-    if (!status) {
+    // 只检查本项目暂存区是否有变化（status --porcelain 会包含仓库内其他无关目录）
+    const staged = gitTry(['diff', '--cached', '--quiet']);
+    if (staged.ok) {
       console.log('没有新变化，无需提交。');
       return;
     }
     const msg = 'update data ' + dates.map(d => d.date).join(',');
     git(['commit', '-m', msg]);
-    git(['push']);
-    console.log('已同步到 GitHub。');
   } catch (e) {
     console.error('git 操作失败：' + e.message);
     console.error('请确认：1) 当前目录已是 git 仓库；2) 已配置远程并已 clone 过仓库。');
+    return;
+  }
+
+  try {
+    git(['push']);
+    console.log('已同步到 GitHub。');
+  } catch (e) {
+    console.error('推送失败：' + e.message);
+    console.error('可能远程刚被其他成员更新，请重新运行 sync 后再试。');
   }
 }
 
