@@ -10,12 +10,20 @@ if %errorlevel% neq 0 (
   exit /b 1
 )
 
+REM 依赖检查：playwright（导出用）和 xlsx（sync 解析用）缺一不可
+REM 直接按 package.json 安装全部依赖，避免只装 playwright 导致后续 sync 缺 xlsx 崩溃
 if not exist "%TOOLS%\node_modules\playwright" (
-  echo 首次运行，正在安装 Playwright...
-  call npm.cmd install playwright
+  echo 首次运行，正在安装依赖（playwright + xlsx）...
+  call npm.cmd install
+)
+if not exist "%TOOLS%\node_modules\xlsx" (
+  echo 正在补装依赖（xlsx）...
+  call npm.cmd install
 )
 
-if not exist "E:\tools\playwright-browsers\chromium-*" (
+REM Playwright 在 Windows 的官方默认浏览器缓存目录是 %LOCALAPPDATA%\ms-playwright
+REM （跨电脑、跨盘符通用；不再写死某台电脑的 E:\tools 路径）
+if not exist "%LOCALAPPDATA%\ms-playwright\chromium-*" (
   echo 首次运行，正在下载浏览器（国内镜像，约 300MB，请耐心等待）...
   set "PLAYWRIGHT_DOWNLOAD_HOST=https://npmmirror.com/mirrors/playwright"
   call npx.cmd playwright install chromium

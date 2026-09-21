@@ -78,7 +78,42 @@ function gitTry(args) {
   return { ok: r.status === 0, msg: (r.stderr || r.stdout || '').trim() };
 }
 
+// 前置校验 1：当前 red_book 必须位于一个 git 仓库内（.git 可能在 red_book 的上层目录）
+// 典型错误场景：直接把文件夹从别的电脑 copy 过来，没有 .git，git pull/commit 全部会失败
+function checkGitRepo() {
+  const r = spawnSync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: ROOT, encoding: 'utf8' });
+  if (r.error || r.status !== 0 || (r.stdout || '').trim() !== 'true') {
+    console.error('='.repeat(60));
+    console.error('[错误] 当前目录不是一个 git 仓库（缺少 .git）。');
+    console.error('你可能是把 red_book 文件夹从另一台电脑直接 copy 过来的。');
+    console.error('请在 git 仓库根目录（含 .git 的那一层，例如 D:\\AI\\AI_test）重新 clone：');
+    console.error('    git clone git@github.com:qinglan900/WQF.git');
+    console.error('='.repeat(60));
+    return false;
+  }
+  return true;
+}
+
+// 前置校验 2：必须已配置提交身份，否则 git commit 会报 Author identity unknown
+function checkGitIdentity() {
+  const name = spawnSync('git', ['config', '--get', 'user.name'], { cwd: ROOT, encoding: 'utf8' });
+  const email = spawnSync('git', ['config', '--get', 'user.email'], { cwd: ROOT, encoding: 'utf8' });
+  if (name.error || email.error || !(name.stdout || '').trim() || !(email.stdout || '').trim()) {
+    console.error('='.repeat(60));
+    console.error('[错误] 未配置 git 提交身份，请先执行（只需一次）：');
+    console.error('    git config --global user.name "qinglan900"');
+    console.error('    git config --global user.email "920568696@qq.com"');
+    console.error('='.repeat(60));
+    return false;
+  }
+  return true;
+}
+
 function main() {
+  // ---- 前置校验（跨电脑 copy 后最常见的两个坑，提前给出明确提示）----
+  if (!checkGitRepo()) return;
+  if (!checkGitIdentity()) return;
+
   // 0. 先拉取远程最新数据（多人协作：本地可能缺其他机器上传的 excel/data，先补全再重建）
   //    --autostash：本地有未提交改动时自动暂存，拉取后再恢复，避免 "unstaged changes" 报错
   const pull = gitTry(['pull', '--rebase', '--autostash']);
