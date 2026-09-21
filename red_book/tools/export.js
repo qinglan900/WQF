@@ -47,16 +47,26 @@ function gitPullBestEffort() {
   return { ok: r.status === 0, msg: ((r.stderr || '') + (r.stdout || '')).trim() };
 }
 
-// git 仓库中该文件的版本信息（最后一次提交的时间与短哈希）
-function gitVersionInfo(target) {
+// git 仓库中该文件的版本信息（最后一次提交的时间与短哈希），ref 省略时取 HEAD
+function gitVersionInfo(target, ref) {
   const rel = path.relative(ROOT, target).replace(/\\/g, '/');
-  const r = spawnSync('git', ['log', '-1', '--format=%ci|%h', '--', rel], { cwd: ROOT, encoding: 'utf8' });
+  const args = ['log', '-1', '--format=%ci|%h'];
+  if (ref) args.push(ref);
+  args.push('--', rel);
+  const r = spawnSync('git', args, { cwd: ROOT, encoding: 'utf8' });
   if (r.error || r.status !== 0) return null;
   const line = (r.stdout || '').trim();
   if (!line) return null;
   const [ci, hash] = line.split('|');
   if (!ci) return null;
   return { time: ci.replace(/\s+[+-]\d{4}$/, ''), hash: hash || '' };
+}
+
+// 执行 git 并返回 stdout（失败返回空串，不抛异常）
+function gitOut(args) {
+  const r = spawnSync('git', args, { cwd: ROOT, encoding: 'utf8' });
+  if (r.error || r.status !== 0) return '';
+  return (r.stdout || '').trim();
 }
 
 // 本机现有文件的信息（修改时间、大小）
@@ -74,6 +84,111 @@ function isSameAsGit(target) {
   const rel = path.relative(ROOT, target).replace(/\\/g, '/');
   const r = spawnSync('git', ['diff', '--quiet', 'HEAD', '--', rel], { cwd: ROOT, encoding: 'utf8' });
   return !r.error && r.status === 0;
+}
+
+// 本机 excel 目录下「有未提交改动」的文件（已跟踪文件；未跟踪的新文件不会与 pull 冲突，忽略）
+function localExcelDirty() {
+  // 注意：不能用会 trim 的封装——porcelain 输出的状态码含前导空格，trim 会让路径整体左移一位
+  const r = spawnSync('git', ['-c', 'core.quotepath=false', 'status', '--porcelain', '--', 'excel'], { cwd: ROOT, encoding: 'utf8' });
+  if (r.error || r.status !== 0) return [];
+  return (r.stdout || '').replace(/\r/g, '').split('\n')
+    .map(l => l.replace(/\s+$/, ''))
+    .filter(Boolean)
+    .map(l => ({ status: l.slice(0, 2).trim(), file: l.slice(3).trim() }))
+    .filter(x => x.file && x.status !== '??');
+}
+
+// 询问 1 / 2；非交互终端（stdin 关闭）返回 0
+function askChoice12(question) {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (c) => { if (done) return; done = true; rl.close(); resolve(c); };
+    const ask = () => {
+      rl.question(question, (line) => {
+        const s = (line || '').trim();
+        if (s === '1') return finish(1);
+        if (s === '2') return finish(2);
+        console.log('输入无效，请输入 1 或 2。');
+        ask();
+      });
+    };
+    rl.on('close', () => { if (!done) { done = true; resolve(0); } });
+    ask();
+  });
+}
+
+// 逐个询问「本机未提交版本」与「远程版本」如何取舍，返回是否至少有一个选择了保留本机版本
+// 只有明确输入 2 才采用远程版本；非交互（0）按保留本机处理，绝不静默覆盖
+async function resolvePullConflicts(files, remoteRef) {
+  console.log('');
+  console.log('='.repeat(64));
+  console.log('检测到以下 Excel 在本机有未提交改动，且远程也有更新：');
+  files.forEach(f => console.log(`  - ${path.basename(f.file)}（本机状态：${f.status}）`));
+  console.log('此时直接 git pull 会把本机改动藏进 stash、并让仓库进入未解决的冲突状态，');
+  console.log('所以先在拉取前请你逐份确认：');
+  console.log('='.repeat(64));
+
+  let keepLocalAny = false;
+  for (const f of files) {
+    const target = path.join(ROOT, f.file);
+    const local = localFileInfo(target);
+    const remoteInfo = gitVersionInfo(target, remoteRef);
+    console.log('');
+    console.log(`【${path.basename(f.file)}】`);
+    console.log(`  [1] 保留本机版本   生成时间：${local ? `${local.time}（本机未提交改动）` : '未知'}`);
+    console.log(`  [2] 采用远程版本   生成时间：${remoteInfo ? `${remoteInfo.time}（提交 ${remoteInfo.hash}，git 上其他电脑推送）` : '未知'}`);
+    console.log('      注意：选 2 会丢弃本机这份未提交改动，随后正常拉取远程版本');
+    const choice = await askChoice12('  请输入 1 / 2 后按回车：');
+
+    if (choice !== 2) {
+      keepLocalAny = true;
+      console.log(`  已保留本机版本：${path.basename(f.file)}`);
+      continue;
+    }
+    // 先让该文件回到 HEAD 状态（工作区与索引都干净），随后正常的 git pull 就会拉入远程版本
+    const r = spawnSync('git', ['restore', '--source=HEAD', '--staged', '--worktree', '--', f.file], { cwd: ROOT, encoding: 'utf8' });
+    if (r.error || r.status !== 0) {
+      console.error('  放弃本机改动失败：' + ((r.stderr || r.stdout || '').trim()));
+      keepLocalAny = true;
+      console.log(`  改为保留本机版本：${path.basename(f.file)}`);
+    } else {
+      console.log(`  已丢弃本机未提交改动，将由拉取改为远程版本：${path.basename(f.file)}`);
+    }
+  }
+  return keepLocalAny;
+}
+
+function reportPull(pull) {
+  if (pull.ok) console.log('已与远程保持一致。');
+  else console.warn('git pull 未成功，将仅按本地文件判断：' + pull.msg);
+}
+
+// 导出前的拉取预处理：先 fetch 探测，若「本机有未提交改动」与「远程有更新」落在同一份 Excel 上，
+// 就先让用户选择取舍，避免 git pull 的 autostash 静默覆盖/藏起本机版本
+async function preflightPull() {
+  const br = gitOut(['rev-parse', '--abbrev-ref', 'HEAD']);
+  if (!br || br === 'HEAD') {
+    reportPull(gitPullBestEffort());
+    return;
+  }
+  const remoteRef = 'origin/' + br;
+  spawnSync('git', ['fetch', '--quiet', 'origin'], { cwd: ROOT, encoding: 'utf8' }); // best-effort 探测远程
+
+  const dirty = localExcelDirty();
+  if (dirty.length) {
+    const changed = gitOut(['-c', 'core.quotepath=false', 'diff', '--name-only', 'HEAD', remoteRef, '--', 'excel'])
+      .split('\n').map(s => s.trim()).filter(Boolean);
+    const overlap = dirty.filter(d => changed.includes(d.file));
+    if (overlap.length) {
+      const keepLocal = await resolvePullConflicts(overlap, remoteRef);
+      if (keepLocal) {
+        console.warn('已选择保留本机版本：本次跳过 git pull（避免覆盖或冲突），仅按本机文件继续。');
+        return;
+      }
+    }
+  }
+  reportPull(gitPullBestEffort());
 }
 
 // 当天 Excel 已存在时：列出三个候选数据源与各自生成时间，必须手动输入编号选择，无自动默认
@@ -246,10 +361,9 @@ async function pickDateRange(page, start, end) {
   if (!fs.existsSync(EXCEL_DIR)) fs.mkdirSync(EXCEL_DIR, { recursive: true });
 
   // 先与远程对齐（best-effort），确保「当天文件已存在」的判断包含 git 上其他电脑推送的版本
+  // 若本机 excel 有未提交改动且远程也改了同一文件，会先暂停让你逐份确认，避免被静默覆盖
   console.log('正在从 GitHub 拉取最新数据...');
-  const pull = gitPullBestEffort();
-  if (pull.ok) console.log('已与远程保持一致。');
-  else console.warn('git pull 未成功，将仅按本地文件判断：' + pull.msg);
+  await preflightPull();
 
   // 清理上次可能残留的临时下载文件（*.part，sync 解析时会自动跳过该后缀）
   for (const f of fs.readdirSync(EXCEL_DIR)) {
