@@ -1,0 +1,53 @@
+@import "tailwindcss";
+
+/* ===== 设计令牌：颜色 / 字体 / 圆角 / 阴影统一由 CSS 变量定义，组件内不硬编码 ===== */
+:root {
+  /* cyan 主题色阶 */
+  --color-primary: #0891b2;          /* cyan-600 */
+  --color-primary-hover: #0e7490;    /* cyan-700 */
+  --color-primary-soft: #ecfeff;     /* cyan-50 */
+  --color-on-primary: #ffffff;
+
+  /* 中性色 */
+  --color-bg: #f6fafb;
+  --color-surface: #ffffff;
+  --color-fg: #164e63;               /* cyan-900 作正文深色，贴合商务青蓝 */
+  --color-muted: #64748b;            /* slate-500 */
+  --color-border: #e2e8f0;           /* slate-200 */
+
+  /* 状态色 */
+  --color-warn: #b45309;             /* amber-700 */
+  --color-warn-soft: #fffbeb;        /* amber-50 */
+
+  /* 圆角（lg 大圆角） */
+  --radius-md: 12px;
+  --radius-lg: 20px;
+
+  /* bento 浅色柔和阴影 */
+  --shadow-bento:
+    0 1px 2px rgb(8 145 178 / 0.04),
+    0 8px 24px rgb(8 145 178 / 0.08),
+    0 24px 48px rgb(22 78 99 / 0.06);
+
+  /* 商务风格字体栈 */
+  --font-business: "Source Han Serif SC", "Noto Serif SC", "Songti SC", "SimSun", Georgia, serif;
+  --font-body: "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+}
+
+@theme inline {
+  --color-background: var(--color-bg);
+  --color-foreground: var(--color-fg);
+  --font-sans: var(--font-body);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
