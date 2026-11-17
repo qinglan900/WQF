@@ -19,6 +19,10 @@ const PROFILE_DIR = path.join(__dirname, '.profile');
 // 笔记首发时间的起始日期（固定），结束日期为当天
 const START_DATE = '2026-08-07';
 
+// 批量模式（由根目录「更新全部数据.bat」调用）：跳过 git 同步、登录只探测 15 秒、冲突时不等待输入
+const BATCH = process.argv.includes('--batch');
+const LOGIN_WAIT_MS = BATCH ? 15000 : 180000;
+
 function pad(n) { return String(n).padStart(2, '0'); }
 
 function today8() {
@@ -362,8 +366,13 @@ async function pickDateRange(page, start, end) {
 
   // 先与远程对齐（best-effort），确保「当天文件已存在」的判断包含 git 上其他电脑推送的版本
   // 若本机 excel 有未提交改动且远程也改了同一文件，会先暂停让你逐份确认，避免被静默覆盖
-  console.log('正在从 GitHub 拉取最新数据...');
-  await preflightPull();
+  // 批量模式下纯本地运行，不碰 git
+  if (BATCH) {
+    console.log('批量模式：跳过 git 同步，仅使用本地数据。');
+  } else {
+    console.log('正在从 GitHub 拉取最新数据...');
+    await preflightPull();
+  }
 
   // 清理上次可能残留的临时下载文件（*.part，sync 解析时会自动跳过该后缀）
   for (const f of fs.readdirSync(EXCEL_DIR)) {
@@ -388,7 +397,7 @@ async function pickDateRange(page, start, end) {
   let found = false;
   for (const text of ['导出数据', '导出']) {
     try {
-      await page.locator(`text=${text}`).first().waitFor({ timeout: 180000 }); // 最长等 3 分钟供登录
+      await page.locator(`text=${text}`).first().waitFor({ timeout: LOGIN_WAIT_MS }); // 批量 15 秒 / 手动 3 分钟
       found = true;
       console.log(`找到导出按钮：${text}`);
       break;
@@ -447,9 +456,20 @@ async function pickDateRange(page, start, end) {
     await context.close();
 
     if (fs.existsSync(target)) {
-      // 当天文件已存在（git 或本机）：列出候选版本及生成时间，等待手动选择
-      const choice = await chooseVersion(target);
-      applyChoice(choice, target, tmp);
+      if (BATCH) {
+        // 批量模式：当天会重复运行时，直接用本次新下载覆盖（数据以最新为准），旧文件转存待查
+        const backup = stashPending(target, target);
+        console.log(`批量模式：已把原文件转存 ${path.basename(backup)}，采用本次新下载`);
+        try {
+          fs.renameSync(tmp, target);
+        } catch (e) {
+          console.error('覆盖当天文件失败：' + e.message);
+        }
+      } else {
+        // 当天文件已存在（git 或本机）：列出候选版本及生成时间，等待手动选择
+        const choice = await chooseVersion(target);
+        applyChoice(choice, target, tmp);
+      }
     } else {
       fs.renameSync(tmp, target);
       console.log(`已下载并保存为：${target}`);
